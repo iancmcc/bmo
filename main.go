@@ -2,9 +2,10 @@ package main
 
 import (
 	"fmt"
+	"log"
 
-	"github.com/huin/goupnp"
-	"github.com/huin/goupnp/soap"
+	"github.com/iancmcc/goupnp"
+	"github.com/iancmcc/goupnp/soap"
 )
 
 const (
@@ -18,10 +19,14 @@ const (
 	URN_BasicEvent_1 = "urn:Belkin:service:basicevent:1"
 )
 
-func discover(target string, iface chan goupnp.MaybeRootDevice) {
-	devices, _ := goupnp.DiscoverDevices(target)
-	for _, device := range devices {
-		iface <- device
+func discover(target string) <-chan goupnp.MaybeRootDevice {
+	if devices, err := goupnp.DiscoverDevices(target); err != nil {
+		log.Printf("Unable to discover %s devices: %v\n", target, err)
+		out := make(chan goupnp.MaybeRootDevice)
+		close(out)
+		return out
+	} else {
+		return devices
 	}
 }
 
@@ -56,14 +61,12 @@ func (client *BasicEventClient) GetBinaryState() string {
 }
 
 func main() {
-	channel := make(chan goupnp.MaybeRootDevice)
+	switches := discover(URN_Switch)
+	motions := discover(URN_Motion)
+	lightswitches := discover(URN_LightSwitch)
+	insights := discover(URN_Insight)
 
-	go discover(URN_Switch, channel)
-	//go discover(URN_Motion, channel)
-	//go discover(URN_LightSwitch, channel)
-	//go discover(URN_Insight, channel)
-
-	for device := range channel {
+	for device := range mergeDevices(switches, motions, lightswitches, insights) {
 		sw := &WeMoDevice{device.Root}
 		fmt.Println(sw.GetBasicEventClient().GetBinaryState())
 		//dev := device.Root.Device
@@ -86,4 +89,5 @@ func main() {
 		//	}
 		//}
 	}
+	log.Println("Done with a run")
 }
